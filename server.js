@@ -47,7 +47,7 @@ app.post('/api/register', async (req, res) => {
     res.json({ 
       success: true, 
       user: result.rows[0],
-      referralLink: `https://tinyurl.com/Swift-support?ref=${newReferralCode}`
+      referralLink: `https://refferaltest.onrender.com/?ref=${newReferralCode}`
     });
   } catch (error) {
     console.error('Registration error:', error);
