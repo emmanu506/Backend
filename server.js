@@ -8,11 +8,92 @@ const PORT = process.env.PORT || 5000;
 
 app.use(cors({ origin: '*' }));
 app.use(express.json());
+app.use(express.static('.'));
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
+
+async function initializeDatabase() {
+  try {
+    console.log('Initializing database tables...');
+    
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        referral_code TEXT UNIQUE NOT NULL,
+        referred_by INTEGER REFERENCES users(id),
+        balance NUMERIC(10, 2) DEFAULT 0 NOT NULL,
+        vip_level INTEGER DEFAULT 0 NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+    `);
+    
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deposits (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        amount NUMERIC(10, 2) NOT NULL,
+        status TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+    `);
+    
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS referral_rewards (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        referred_user_id INTEGER NOT NULL REFERENCES users(id),
+        deposit_id INTEGER NOT NULL REFERENCES deposits(id),
+        reward_amount NUMERIC(10, 2) NOT NULL,
+        reward_level INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+    `);
+    
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS team_bonuses (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        bonus_amount NUMERIC(10, 2) NOT NULL,
+        team_total NUMERIC(10, 2) NOT NULL,
+        bonus_type TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_users_referral_code ON users(referral_code);
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_users_referred_by ON users(referred_by);
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_deposits_user_id ON deposits(user_id);
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_deposits_created_at ON deposits(created_at);
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_referral_rewards_user_id ON referral_rewards(user_id);
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_team_bonuses_user_id ON team_bonuses(user_id);
+    `);
+    
+    console.log('Database tables initialized successfully!');
+  } catch (error) {
+    console.error('Database initialization error:', error);
+  }
+}
 
 function generateReferralCode() {
   return Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -198,7 +279,7 @@ app.get('/api/user/:userId', async (req, res) => {
       rewards: rewardsResult.rows,
       teamSize: parseInt(teamSizeResult.rows[0].count),
       teamTotal: parseFloat(teamTotalResult.rows[0].total || 0),
-      referralLink: `https://tinyurl.com/Swift-support?ref=${user.referral_code}`
+      referralLink: `https://refferaltest.onrender.com/?ref=${user.referral_code}`
     });
   } catch (error) {
     console.error('Get user error:', error);
@@ -222,6 +303,7 @@ app.get('/api/user-by-username/:username', async (req, res) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
   console.log(`Server running on port ${PORT}`);
+  await initializeDatabase();
 });
